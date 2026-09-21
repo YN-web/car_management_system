@@ -5,5 +5,5 @@ http://localhost:3000/auth/login
 //account 
 {
   "email": "aliceinfo@gmail.com",
-  "password" : "iradukunda"
+  "password" : ""
 }
