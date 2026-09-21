@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Enterprise {
+  id        String     @id @default(uuid())
+  name      String
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  contracts Contract[]
+  users     User[]
+}
+
+model Role {
+  id           String           @id @default(uuid())
+  name         String           @unique
+  isSuperAdmin Boolean          @default(false)
+  permissions  RolePermission[]
+  users        User[]
+}
+
+model Permission {
+  id         String           @id @default(uuid())
+  action     String
+  subject    String
+  conditions String?
+  roles      RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model User {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  password     String
+  name         String
+  isActive     Boolean         @default(true)
+  roleId       String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  approvals    RepairRequest[] @relation("Approver")
+  repairs      RepairRequest[] @relation("Requester")
+  role         Role            @relation(fields: [roleId], references: [id])
+  enterpriseId String
+  enterprise   Enterprise @relation(fields: [enterpriseId], references: [id])
+  vehicles     Vehicle[]       @relation("AssignedDriver")
+}
+
+model Vehicle {
+  id             String          @id @default(uuid())
+  plateNumber    String          @unique
+  brand          String
+  model          String
+  year           Int
+  status         String          @default("active")
+  driverId       String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  expenses       Expense[]
+  repairRequests RepairRequest[]
+  driver         User?           @relation("AssignedDriver", fields: [driverId], references: [id])
+}
+
+model Garage {
+  id            String          @id @default(uuid())
+  name          String
+  contactName   String
+  contactPhone  String
+  address       String
+  underContract Boolean         @default(false)
+  email         String?
+  contracts     Contract[]
+  repairs       RepairRequest[]
+}
+
+model Contract {
+  id              String     @id @default(uuid())
+  garageId        String
+  enterpriseId    String
+  startDate       DateTime
+  endDate         DateTime?
+  terms           String?
+  discountPercent Float      @default(0.0)
+  enterprise      Enterprise @relation(fields: [enterpriseId], references: [id])
+  garage          Garage     @relation(fields: [garageId], references: [id])
+}
+
+model RepairRequest {
+  id              String      @id @default(uuid())
+  vehicleId       String
+  garageId        String
+  requesterId     String
+  approverId      String?
+  status          String      @default("draft")
+  description     String
+  rejectionReason String?
+  approvedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  billing         Billing?
+  approver        User?       @relation("Approver", fields: [approverId], references: [id])
+  requester       User        @relation("Requester", fields: [requesterId], references: [id])
+  garage          Garage      @relation(fields: [garageId], references: [id])
+  vehicle         Vehicle     @relation(fields: [vehicleId], references: [id])
+  statusLogs      StatusLog[]
+}
+
+model StatusLog {
+  id              String        @id @default(uuid())
+  repairRequestId String
+  fromStatus      String
+  toStatus        String
+  changedById     String
+  timestamp       DateTime      @default(now())
+  repairRequest   RepairRequest @relation(fields: [repairRequestId], references: [id])
+}
+
+model Billing {
+  id              String        @id @default(uuid())
+  repairRequestId String        @unique
+  serviceType     String
+  grossAmount     Float
+  discountAmount  Float
+  netAmount       Float
+  invoiceRef      String
+  billedDate      DateTime      @default(now())
+  repairRequest   RepairRequest @relation(fields: [repairRequestId], references: [id])
+  expense         Expense?
+}
+
+model ExpenseCategory {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  expenses Expense[]
+}
+
+model Expense {
+  id          String          @id @default(uuid())
+  vehicleId   String
+  categoryId  String
+  billingId   String?         @unique
+  amount      Float
+  date        DateTime        @default(now())
+  description String?
+  billing     Billing?        @relation(fields: [billingId], references: [id])
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
+  vehicle     Vehicle         @relation(fields: [vehicleId], references: [id])
+}

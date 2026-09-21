@@ -1,0 +1,190 @@
+# CaR Management System — Feature & Functionality Specification
+
+## 1. Purpose
+
+A system for enterprises to manage their vehicle fleets: tracking which garages service which vehicles, running repairs through an approval workflow, billing against negotiated contracts, and rolling every cost up into a single per-vehicle expense ledger for reporting.
+
+This document breaks the system into modules. Each module lists the functionality to build and its acceptance criteria, so it can be handed off as a self-contained set of tasks.
+
+**Stack**: NestJS backend, Prisma ORM, CASL for authorization.
+
+---
+
+## 2. Modules
+
+### 2.1 Enterprise & user management
+
+**Functionality**
+- Create, view, update, deactivate an enterprise (a company owning a fleet).
+- Create, view, update, deactivate users within an enterprise.
+- Roles are **dynamic**, not hardcoded: an admin can create a role (e.g. "Fleet Manager", "Approver", "Regional Auditor"), name it, and assign it one or more permissions.
+- A permission is an (action, subject) pair in CASL terms — e.g. `approve` on `RepairRequest`, `create` on `Contract`, `manage` on `all`. One role can be assigned many permissions; a permission can belong to many roles.
+- Each user is assigned exactly one role.
+- **`Super_Admin`**: a reserved, system-created role.
+  - It is never assigned any permissions in the database — its permission list stays empty.
+  - It bypasses the permission system entirely: any authorization check for a `Super_Admin` user short-circuits to "allowed", rather than being evaluated against CASL rules. This must be implemented as an explicit check before CASL ability evaluation (e.g. `if (user.role.isSuperAdmin) return true;`), not by giving it a `manage all` permission — the requirement is that it has *no* assigned permissions and still bypasses.
+  - It cannot be deleted, renamed, or edited via the normal role-management endpoints.
+  - It is auto-created by the system, and automatically assigned to the very first user created (system bootstrap) — every subsequent user gets an explicitly assigned role.
+
+**Acceptance criteria**
+- A user always belongs to exactly one enterprise.
+- Email is unique across the whole system (not just per enterprise).
+- Deactivating a user does not delete their historical records (requests they made, approvals they gave).
+- The first user ever created in the system is automatically assigned `Super_Admin`; this only happens once (guard against re-triggering on a second "first" user after data resets in a given environment).
+- Attempting to assign a permission to `Super_Admin`, or to delete/rename it, is rejected by the API.
+- Deleting a role that still has users assigned to it is blocked (or requires reassigning those users first — decide and document which).
+
+---
+
+### 2.2 Vehicle management
+
+**Functionality**
+- CRUD for vehicles: plate number, brand, model, year, status (`active`, `in_repair`, `retired`).
+- Assign/reassign a driver to a vehicle.
+- Vehicle detail view showing: current status, assigned driver, full repair history, full expense history, total spend to date.
+- Vehicle list view with filters (status, brand, assigned driver) and search by plate number.
+  
+**Acceptance criteria**
+- Plate number is unique.
+- Vehicle status changes to `in_repair` automatically when it has a repair request with status `approved` or `in_progress` (business rule — implement as a service-layer effect, not a manual toggle, to avoid drift).
+- Retiring a vehicle keeps its historical expense/repair data intact and readable.
+
+---
+
+### 2.3 Garage & contract management
+
+**Functionality**
+- CRUD for garages: name, contact name/phone, address, `under_contract` flag.
+- CRUD for contracts: linked to one garage and one enterprise, start date, end date (nullable = open-ended), free-text terms, discount percentage.
+- A garage can have multiple contracts over time (e.g. renewed yearly) but only one **active** contract per enterprise at a time.
+- Contract expiry list/alert: contracts ending within the next 30 days.
+
+**Acceptance criteria**
+- `end_date` must not be before `start_date` when both are present.
+- Setting `under_contract = true` on a garage without an active contract should be blocked or flagged — decide and document which.
+- Billing against a garage automatically looks up its active contract (if any) to apply the discount.
+
+---
+
+### 2.4 Repair request workflow
+
+**Functionality**
+- A driver or fleet manager creates a repair request: vehicle, garage, description. Starts in `draft`.
+- Submitting moves it to `pending_approval`.
+- A user holding a role with the `approve` permission on `RepairRequest` reviews and either:
+  - **Approves** → status `approved`, records `approver_id` and `approved_at`.
+  - **Rejects** → status `rejected`, requires a `rejection_reason`.
+- Once work begins at the garage, status moves to `in_progress` (manually, by fleet manager, or via garage confirmation if that integration exists later).
+- On completion, status moves to `completed` and unlocks billing entry for this request.
+- A request can be `cancelled` at any point before `completed` by the requester or a fleet manager, with a reason logged.
+- Full status-change history is retained (who changed it, when, from/to what) — this is the audit trail for the approval process.
+
+**Acceptance criteria**
+- A request cannot skip from `draft`/`pending_approval` straight to `completed` — it must pass through `approved` and `in_progress`.
+- A rejected request cannot be billed.
+- Only a user whose role has the `approve` permission on `RepairRequest` can approve/reject (or `Super_Admin`, which bypasses the check).
+- Pending-approval list is filterable by enterprise, garage, and requester.
+
+---
+
+### 2.5 Billing
+
+**Functionality**
+- Once a repair request is `completed`, create a billing record: service type (e.g. oil change, spare parts, bodywork), amount, invoice reference, billed date.
+- If the garage has an active contract, apply its discount automatically and show both gross and net amount.
+- Creating a billing record must automatically create a matching entry in the expense ledger (module 2.6) — this should happen in one transaction/service call, not as two separate manual steps.
+
+**Acceptance criteria**
+- A repair request can have at most one billing record.
+- Billing amount is always >= 0.
+- Currency is stored per-record (default the enterprise's base currency; multi-currency conversion is out of scope for v1).
+
+---
+
+### 2.6 Expense ledger
+
+**Functionality**
+- Central table of every cost tied to a vehicle, each with a category: `Garage`, `Insurance`, `Technical control fees`, `Car wash`, `Spare parts`, `Other`.
+- Garage-category expenses are created automatically from billing (module 2.5) — never entered manually.
+- All other categories (insurance, technical control, car wash, other) are entered manually via a simple form: vehicle, category, amount, date, description.
+- Expense categories are a managed lookup list (admin can add new categories later without a code change).
+
+**Acceptance criteria**
+- Every expense row always has a `vehicle_id` and a `category`.
+- A garage-category expense always traces back to a billing record (never orphaned).
+- Deleting a vehicle must not silently delete its expense history without an explicit confirmation/export step.
+
+---
+
+### 2.7 Reporting & dashboards
+
+**Functionality**
+- Per-vehicle summary: total spend, spend broken down by category, spend over time (monthly trend).
+- Per-enterprise summary: total fleet spend, top 10 vehicles by spend, spend by category across the whole fleet.
+- Pending-approvals dashboard for approvers.
+- Contract-expiry dashboard for fleet managers.
+- Export any report view to CSV.
+
+**Acceptance criteria**
+- All reports are scoped to the logged-in user's enterprise — no cross-enterprise data leakage.
+- Date-range filter available on every report (default: current year).
+- Reports must reflect the expense ledger only (single source of truth) — never recompute totals from billing/repair tables directly.
+
+---
+
+## 3. Cross-cutting requirements
+
+### 3.1 Roles & permissions (CASL)
+
+Permissions are not hardcoded per role in the app — they're data. The permission model:
+
+- **Action**: a CASL action string (`create`, `read`, `update`, `delete`, `approve`, `manage`, ...). `manage` is CASL's wildcard for "all actions."
+- **Subject**: the entity it applies to (`Vehicle`, `RepairRequest`, `Contract`, `Billing`, `Expense`, `Role`, `User`, ...). `all` is CASL's wildcard for "every subject."
+- **Permission**: one (action, subject) pair, optionally with CASL `conditions` (e.g. restrict to `{ enterpriseId: user.enterpriseId }`) so a role can be scoped to "only within my own enterprise."
+- **Role**: a named, admin-created bundle of permissions. One role → many permissions; a given permission can be reused across roles.
+- **User**: assigned exactly one role.
+
+At login/request time, the backend builds a CASL `Ability` for the user from their role's permissions and checks `can(action, subject)` at each guarded endpoint — this replaces any `@Roles('fleet_manager')`-style hardcoded decorator with a data-driven `@CheckAbility({ action: 'approve', subject: 'RepairRequest' })`-style guard.
+
+**`Super_Admin` is the one exception**: it has zero rows in the permissions table, and the ability-check guard must special-case it to always return `true` before it ever builds/evaluates a CASL `Ability`.
+
+Seed data should still ship with a few starter roles (e.g. "Fleet Manager", "Approver", "Driver") pre-populated with sensible permissions, so the system is usable out of the box — but nothing stops an enterprise admin from renaming, editing, or replacing them.
+
+### 3.2 Other requirements
+- All list endpoints support pagination and sorting.
+- All create/update actions validate input server-side (don't trust client-side validation alone).
+- All monetary fields use a decimal type, never float.
+- All write actions are timestamped and attributed to the acting user (created_by/updated_by pattern, or an audit log table).
+
+---
+
+## 4. Suggested task breakdown
+
+| # | Task | Module | Suggested size |
+|---|---|---|---|
+| 1 | Set up Prisma schema + migrations + seed script | Foundation | M |
+| 2 | Enterprise & user CRUD | 2.1 | M |
+| 2b | Role & Permission CRUD + CASL ability builder + guard + `Super_Admin` bootstrap logic | 2.1 / 3.1 | L |
+| 3 | Vehicle CRUD + list/filter/search + detail view | 2.2 | M |
+| 4 | Garage CRUD | 2.3 | S |
+| 5 | Contract CRUD + active-contract lookup + expiry list | 2.3 | M |
+| 6 | Repair request creation + submit flow | 2.4 | M |
+| 7 | Approval/rejection flow + status history/audit trail | 2.4 | L |
+| 8 | Billing creation + contract discount logic | 2.5 | M |
+| 9 | Auto-create expense from billing (transactional) | 2.5 / 2.6 | M |
+| 10 | Manual expense entry form + category management | 2.6 | S |
+| 11 | Per-vehicle report view | 2.7 | M |
+| 12 | Per-enterprise dashboard | 2.7 | M |
+| 13 | CSV export | 2.7 | S |
+
+(S = a day or two, M = a few days, L = a week+. Adjust to your intern's pace and start them on task 1 + 4, the lowest-risk pieces, before handing over the approval workflow.)
+
+---
+
+## 5. Out of scope for v1 (flag if these come up)
+
+- Multi-currency conversion
+- Email/push notifications on approval events
+- Garage-side self-service portal
+- Mobile app
+- Integration with external accounting systems
