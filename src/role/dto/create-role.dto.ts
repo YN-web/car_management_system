@@ -8,3 +8,4 @@ export class CreateRoleDto {
   @IsOptional()
   isSuperAdmin?: boolean;
 }
+

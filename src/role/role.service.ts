@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable,  ForbiddenException} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -62,26 +62,67 @@ export class RoleService {
     });
   }
   //update
-  update(id: string, updateRoleDto: UpdateRoleDto) {
-    return this.prisma.role.update({
-      where: { id },
-      data: updateRoleDto,
-    });
+ async update(id: string, updateRoleDto: UpdateRoleDto) {
+  const role = await this.prisma.role.findUnique({
+    where: { id },
+  });
+
+  if (!role) {
+    throw new Error('Role not found');
   }
+
+  if (role.isSuperAdmin) {
+    throw new ForbiddenException(
+      'Super_Admin role cannot be modified',
+    );
+  }
+
+  return this.prisma.role.update({
+    where: { id },
+    data: updateRoleDto,
+  });
+}
   //delete
-  remove(id: string) {
-    return this.prisma.role.delete({
-      where: { id },
-    });
+async remove(id: string) {
+  const role = await this.prisma.role.findUnique({
+    where: { id },
+  });
+
+  if (!role) {
+    throw new Error('Role not found');
   }
 
-  assignPermission(id: string, permissionId: string) {
-    return this.prisma.rolePermission.create({
-      data: {
-        roleId: id,
-        permissionId: permissionId,
-      },
-    });
+  if (role.isSuperAdmin) {
+    throw new ForbiddenException(
+      'Super_Admin role cannot be deleted',
+    );
   }
 
+  return this.prisma.role.delete({
+    where: { id },
+  });
+}
+
+  async assignPermission(id: string, permissionId: string) {
+  const role = await this.prisma.role.findUnique({
+    where: { id },
+  });
+
+  if (!role) {
+    throw new Error('Role not found');
+  }
+
+  if (role.isSuperAdmin) {
+    throw new ForbiddenException(
+      'Permissions cannot be assigned to Super_Admin',
+    );
+  }
+
+  return this.prisma.rolePermission.create({
+    data: {
+      roleId: id,
+      permissionId: permissionId,
+    },
+  });
+}
 }

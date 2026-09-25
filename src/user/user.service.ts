@@ -9,25 +9,69 @@ export class UserService {
   constructor(private prisma: PrismaService) { }
 
   async create(createUserDto: CreateUserDto) {
-    const { password, ...userData } = createUserDto;
-    const hashedPassword = await bcrypt.hash(password, 10);
+  const { password, ...userData } = createUserDto;
 
-    return this.prisma.user.create({
-      data: {
-        ...userData,
-        password: hashedPassword,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        isActive: true,
-        roleId: true,
-        enterpriseId: true,
-        createdAt: true,
+  const userCount = await this.prisma.user.count();
+
+    let roleId: string;
+
+if (userCount === 0) {
+  const superAdminRole = await this.prisma.role.findFirst({
+    where: {
+      isSuperAdmin: true,
+    },
+  });
+
+  if (!superAdminRole) {
+    throw new NotFoundException(
+      'Super_Admin role has not been created',
+    );
+  }
+
+  roleId = superAdminRole.id;
+} else {
+  if (!createUserDto.roleId) {
+    throw new NotFoundException('Role is required');
+  }
+
+  roleId = createUserDto.roleId;
+}
+
+  if (userCount === 0) {
+    const superAdminRole = await this.prisma.role.findFirst({
+      where: {
+        isSuperAdmin: true,
       },
     });
+
+    if (!superAdminRole) {
+      throw new NotFoundException(
+        'Super_Admin role has not been created',
+      );
+    }
+
+    roleId = superAdminRole.id;
   }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  return this.prisma.user.create({
+    data: {
+      ...userData,
+      roleId,
+      password: hashedPassword,
+    },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      isActive: true,
+      roleId: true,
+      enterpriseId: true,
+      createdAt: true,
+    },
+  });
+}
 
   async findAll() {
     return this.prisma.user.findMany({
