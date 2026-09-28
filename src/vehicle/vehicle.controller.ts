@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -28,11 +29,15 @@ export class VehicleController {
     return this.vehicleService.create(createVehicleDto);
   }
 
-  @CheckAbility('read', 'Vehicle')
-  @Get()
-  findAll() {
-    return this.vehicleService.findAll();
-  }
+ @CheckAbility('read', 'Vehicle')
+ @Get()
+ findAll(
+  @Query('search') search?: string,
+  @Query('status') status?: string,
+  @Query('brand') brand?: string,
+) {
+  return this.vehicleService.findAll(search, status, brand);
+}
 
   @CheckAbility('read', 'Vehicle')
   @Get(':id')

@@ -12,23 +12,35 @@ export class VehicleService {
       data: createVehicleDto,
     });
   }
-
-  findAll() {
-    return this.prisma.vehicle.findMany({
-      include: {
-        driver: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
+findAll(search?: string, status?: string, brand?: string) {
+  return this.prisma.vehicle.findMany({
+    where: {
+      ...(search
+        ? {
+            OR: [
+              { plateNumber: { contains: search } },
+              { brand: { contains: search } },
+              { model: { contains: search } },
+            ],
+          }
+        : {}),
+      ...(status ? { status } : {}),
+      ...(brand ? { brand } : {}),
+    },
+    include: {
+      driver: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-  }
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
+}
 
   findOne(id: string) {
     return this.prisma.vehicle.findUnique({
