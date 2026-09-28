@@ -8,35 +8,14 @@ import { UpdateUserDto } from './dto/update-user.dto';
 export class UserService {
   constructor(private prisma: PrismaService) { }
 
-  async create(createUserDto: CreateUserDto) {
+async create(createUserDto: CreateUserDto) {
   const { password, ...userData } = createUserDto;
 
   const userCount = await this.prisma.user.count();
 
-    let roleId: string;
+  let roleId: string;
 
-if (userCount === 0) {
-  const superAdminRole = await this.prisma.role.findFirst({
-    where: {
-      isSuperAdmin: true,
-    },
-  });
-
-  if (!superAdminRole) {
-    throw new NotFoundException(
-      'Super_Admin role has not been created',
-    );
-  }
-
-  roleId = superAdminRole.id;
-} else {
-  if (!createUserDto.roleId) {
-    throw new NotFoundException('Role is required');
-  }
-
-  roleId = createUserDto.roleId;
-}
-
+  // First user becomes Super_Admin
   if (userCount === 0) {
     const superAdminRole = await this.prisma.role.findFirst({
       where: {
@@ -51,6 +30,18 @@ if (userCount === 0) {
     }
 
     roleId = superAdminRole.id;
+  } else {
+    // Other users must have a role
+    if (!createUserDto.roleId) {
+      throw new NotFoundException('Role is required');
+    }
+
+    // Other users must belong to an enterprise
+    if (!createUserDto.enterpriseId) {
+      throw new NotFoundException('Enterprise is required');
+    }
+
+    roleId = createUserDto.roleId;
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -72,7 +63,6 @@ if (userCount === 0) {
     },
   });
 }
-
   async findAll() {
     return this.prisma.user.findMany({
       select: {

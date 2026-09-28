@@ -54,8 +54,10 @@ model User {
   approvals    RepairRequest[] @relation("Approver")
   repairs      RepairRequest[] @relation("Requester")
   role         Role            @relation(fields: [roleId], references: [id])
-  enterpriseId String
-  enterprise   Enterprise @relation(fields: [enterpriseId], references: [id])
+
+  enterpriseId String?
+  enterprise   Enterprise? @relation(fields: [enterpriseId], references: [id])
+
   vehicles     Vehicle[]       @relation("AssignedDriver")
 }
 

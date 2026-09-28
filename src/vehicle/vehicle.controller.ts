@@ -31,12 +31,20 @@ export class VehicleController {
 
  @CheckAbility('read', 'Vehicle')
  @Get()
- findAll(
+findAll(
   @Query('search') search?: string,
   @Query('status') status?: string,
   @Query('brand') brand?: string,
+  @Query('model') model?: string,
+  @Query('year') year?: string,
 ) {
-  return this.vehicleService.findAll(search, status, brand);
+  return this.vehicleService.findAll(
+    search,
+    status,
+    brand,
+    model,
+    year,
+  );
 }
 
   @CheckAbility('read', 'Vehicle')

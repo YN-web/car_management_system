@@ -1,5 +1,5 @@
 // src/garage/dto/garage.dto.ts
-import { IsNotEmpty, IsString, IsOptional, IsEmail } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsEmail,  IsBoolean, } from 'class-validator';
 
 export class CreateGarageDto {
   @IsString()
@@ -21,6 +21,10 @@ export class CreateGarageDto {
   @IsEmail()
   @IsOptional()
   email?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  underContract?: boolean;
 }
 
 export class UpdateGarageDto {
@@ -43,4 +47,8 @@ export class UpdateGarageDto {
   @IsEmail()
   @IsOptional()
   email?: string;
+  
+  @IsBoolean()
+  @IsOptional()
+  underContract?: boolean;
 }

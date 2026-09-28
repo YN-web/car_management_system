@@ -11,6 +11,7 @@ import { PermissionModule } from './permission/permission.module';
 import { CaslModule } from './casl/casl.module';
 import { AuthModule } from './auth/auth.module';
 import { VehicleModule } from './vehicle/vehicle.module';
+import { ContractModule } from './contract/contract.module';
 
 @Module({
   imports: [PrismaModule, GarageModule, 

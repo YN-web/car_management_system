@@ -24,6 +24,6 @@ export class CreateUserDto {
   roleId?: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   enterpriseId: string;
 }
