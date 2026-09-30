@@ -37,6 +37,12 @@ export class ContractController {
   }
 
   @CheckAbility('read', 'Contract')
+  @Get('expiring')
+  findExpiring() {
+  return this.contractService.findExpiring();
+  }
+
+  @CheckAbility('read', 'Contract')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.contractService.findOne(id);

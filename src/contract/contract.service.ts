@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException,   ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateContractDto,
@@ -9,18 +9,54 @@ import {
 export class ContractService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateContractDto) {
-    return this.prisma.contract.create({
-      data: {
-        garageId: dto.garageId,
-        enterpriseId: dto.enterpriseId,
-        startDate: new Date(dto.startDate),
-        endDate: dto.endDate ? new Date(dto.endDate) : null,
-        terms: dto.terms,
-        discountPercent: dto.discountPercent ?? 0,
-      },
-    });
+async create(dto: CreateContractDto) {
+  const startDate = new Date(dto.startDate);
+  const endDate = dto.endDate ? new Date(dto.endDate) : null;
+
+  const now = new Date();
+
+  const isActive =
+    startDate <= now && (endDate === null || endDate >= now);
+
+  if (isActive) {
+    const existingActiveContract =
+      await this.prisma.contract.findFirst({
+        where: {
+          enterpriseId: dto.enterpriseId,
+          startDate: {
+            lte: now,
+          },
+          OR: [
+            {
+              endDate: null,
+            },
+            {
+              endDate: {
+                gte: now,
+              },
+            },
+          ],
+        },
+      });
+
+    if (existingActiveContract) {
+      throw new ConflictException(
+        'This enterprise already has an active contract',
+      );
+    }
   }
+
+  return this.prisma.contract.create({
+    data: {
+      garageId: dto.garageId,
+      enterpriseId: dto.enterpriseId,
+      startDate,
+      endDate,
+      terms: dto.terms,
+      discountPercent: dto.discountPercent ?? 0,
+    },
+  });
+}
 
   async findAll() {
     return this.prisma.contract.findMany({
@@ -33,6 +69,29 @@ export class ContractService {
       },
     });
   }
+
+  async findExpiring(days: number = 30) {
+  const now = new Date();
+
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + days);
+
+  return this.prisma.contract.findMany({
+    where: {
+      endDate: {
+        gte: now,
+        lte: expiryDate,
+      },
+    },
+    include: {
+      garage: true,
+      enterprise: true,
+    },
+    orderBy: {
+      endDate: 'asc',
+    },
+  });
+}
 
   async findOne(id: string) {
     const contract = await this.prisma.contract.findUnique({

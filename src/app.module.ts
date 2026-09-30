@@ -12,11 +12,12 @@ import { CaslModule } from './casl/casl.module';
 import { AuthModule } from './auth/auth.module';
 import { VehicleModule } from './vehicle/vehicle.module';
 import { ContractModule } from './contract/contract.module';
+import { RepairRequestModule } from './repair-request/repair-request.module';
 
 @Module({
   imports: [PrismaModule, GarageModule, 
     EnterpriseModule, UserModule, RoleModule, 
-    PermissionModule, CaslModule, CaslModule, AuthModule, VehicleModule,],
+    PermissionModule, CaslModule, CaslModule, AuthModule, VehicleModule,  ContractModule,RepairRequestModule,],
   controllers: [AppController],
   providers: [AppService],
 })
