@@ -16,6 +16,8 @@ import { AbilityGuard } from '../casl/ability/ability.guard';
 import { CheckAbility } from '../casl/ability/ability.decorator';
 import { UpdateRepairRequestDto } from './dto/update-repair-request.dto';
 
+import { RejectRepairRequestDto } from './dto/reject-repair-request.dto';
+
 
 @Controller('repair-request')
 @UseGuards(JwtAuthGuard, AbilityGuard)
@@ -67,6 +69,38 @@ remove(
 findMyRequests(@Req() req: any) {
   return this.repairRequestService.findMyRequests(
     req.user.id,
+  );
+}
+
+@Get(':id/history')
+@CheckAbility('read', 'RepairRequest')
+getHistory(@Param('id') id: string) {
+  return this.repairRequestService.getHistory(id);
+}
+
+@Patch(':id/approve')
+@CheckAbility('approve', 'RepairRequest')
+approve(
+  @Param('id') id: string,
+  @Req() req: any,
+) {
+  return this.repairRequestService.approve(
+    id,
+    req.user.id,
+  );
+}
+
+@Patch(':id/reject')
+@CheckAbility('approve', 'RepairRequest')
+reject(
+  @Param('id') id: string,
+  @Body() dto: RejectRepairRequestDto,
+  @Req() req: any,
+) {
+  return this.repairRequestService.reject(
+    id,
+    req.user.id,
+    dto,
   );
 }
 }
