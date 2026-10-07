@@ -15,6 +15,7 @@ model Enterprise {
   updatedAt DateTime   @updatedAt
   contracts Contract[]
   users     User[]
+  vehicles  Vehicle[]
 }
 
 model Role {
@@ -43,35 +44,44 @@ model RolePermission {
 }
 
 model User {
-  id           String          @id @default(uuid())
-  email        String          @unique
-  password     String
-  name         String
-  isActive     Boolean         @default(true)
-  roleId       String
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  approvals    RepairRequest[] @relation("Approver")
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  isActive  Boolean  @default(true)
+  roleId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  approvals  RepairRequest[] @relation("Approver")
   statusLogs StatusLog[]
-  repairs      RepairRequest[] @relation("Requester")
-  role         Role            @relation(fields: [roleId], references: [id])
+  repairs    RepairRequest[] @relation("Requester")
+  role       Role            @relation(fields: [roleId], references: [id])
 
   enterpriseId String?
   enterprise   Enterprise? @relation(fields: [enterpriseId], references: [id])
 
-  vehicles     Vehicle[]       @relation("AssignedDriver")
+  vehicles Vehicle[] @relation("AssignedDriver")
+
+  createdContracts Contract[] @relation("ContractCreatedBy")
+  updatedContracts Contract[] @relation("ContractUpdatedBy")
+
+  auditLogs AuditLog[]
 }
 
 model Vehicle {
-  id             String          @id @default(uuid())
-  plateNumber    String          @unique
-  brand          String
-  model          String
-  year           Int
-  status         String          @default("active")
-  driverId       String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id           String   @id @default(uuid())
+  plateNumber  String   @unique
+  brand        String
+  model        String
+  year         Int
+  status       String   @default("active")
+  driverId     String?
+  enterpriseId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  enterprise     Enterprise      @relation(fields: [enterpriseId], references: [id])
   expenses       Expense[]
   repairRequests RepairRequest[]
   driver         User?           @relation("AssignedDriver", fields: [driverId], references: [id])
@@ -90,15 +100,24 @@ model Garage {
 }
 
 model Contract {
-  id              String     @id @default(uuid())
+  id              String    @id @default(uuid())
   garageId        String
   enterpriseId    String
   startDate       DateTime
   endDate         DateTime?
   terms           String?
-  discountPercent Float      @default(0.0)
-  enterprise      Enterprise @relation(fields: [enterpriseId], references: [id])
-  garage          Garage     @relation(fields: [garageId], references: [id])
+  discountPercent Float     @default(0.0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  updatedById String?
+
+  enterprise Enterprise @relation(fields: [enterpriseId], references: [id])
+  garage     Garage     @relation(fields: [garageId], references: [id])
+
+  createdBy User? @relation("ContractCreatedBy", fields: [createdById], references: [id])
+  updatedBy User? @relation("ContractUpdatedBy", fields: [updatedById], references: [id])
 }
 
 model RepairRequest {
@@ -119,6 +138,7 @@ model RepairRequest {
   vehicle         Vehicle     @relation(fields: [vehicleId], references: [id])
   statusLogs      StatusLog[]
 }
+
 model StatusLog {
   id              String        @id @default(uuid())
   repairRequestId String
@@ -134,9 +154,9 @@ model Billing {
   id              String        @id @default(uuid())
   repairRequestId String        @unique
   serviceType     String
-  grossAmount     Float
-  discountAmount  Float
-  netAmount       Float
+  grossAmount     Decimal
+  discountAmount  Decimal
+  netAmount       Decimal
   invoiceRef      String
   billedDate      DateTime      @default(now())
   repairRequest   RepairRequest @relation(fields: [repairRequestId], references: [id])
@@ -154,10 +174,21 @@ model Expense {
   vehicleId   String
   categoryId  String
   billingId   String?         @unique
-  amount      Float
+  amount      Decimal
   date        DateTime        @default(now())
   description String?
   billing     Billing?        @relation(fields: [billingId], references: [id])
   category    ExpenseCategory @relation(fields: [categoryId], references: [id])
   vehicle     Vehicle         @relation(fields: [vehicleId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  entity    String
+  entityId  String
+  userId    String
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }

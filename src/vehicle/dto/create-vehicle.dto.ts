@@ -1,4 +1,11 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  IsIn,
+  Min,
+} from 'class-validator';
 
 export class CreateVehicleDto {
   @IsString()
@@ -16,9 +23,13 @@ export class CreateVehicleDto {
 
   @IsOptional()
   @IsString()
+  @IsIn(['active', 'in_repair', 'retired'])
   status?: string;
 
   @IsOptional()
   @IsString()
   driverId?: string;
+
+  @IsUUID()
+  enterpriseId: string;
 }

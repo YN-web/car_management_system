@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { PermissionController } from './permission.controller';
 import { PermissionService } from './permission.service';
 import { CaslModule } from '../casl/casl.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
-  imports: [CaslModule],
+  imports: [CaslModule, AuditModule,],
   controllers: [PermissionController],
   providers: [PermissionService],
   exports: [PermissionService],

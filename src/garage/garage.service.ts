@@ -1,53 +1,81 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGarageDto, UpdateGarageDto } from './dto/garage.dto';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class GarageService {
-  // Inject PrismaService via constructor dependency injection
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
-  // 1. Create a new Garage record
-  async create(dto: CreateGarageDto) {
-    return this.prisma.garage.create({
+  async create(dto: CreateGarageDto, userId: string) {
+    const garage = await this.prisma.garage.create({
       data: dto,
     });
+
+    await this.auditService.log(
+      'CREATE',
+      'Garage',
+      garage.id,
+      userId,
+    );
+
+    return garage;
   }
 
-  // 2. Fetch all garages sorted alphabetically by name
   async findAll() {
     return this.prisma.garage.findMany({
       orderBy: { name: 'asc' },
     });
   }
 
-  // 3. Fetch a single garage by its unique ID
   async findOne(id: string) {
     const garage = await this.prisma.garage.findUnique({
       where: { id },
     });
 
-    // Throw a standard NestJS HTTP 404 exception if record doesn't exist
     if (!garage) {
-      throw new NotFoundException(`Garage with ID ${id} not found`);
+      throw new NotFoundException(
+        `Garage with ID ${id} not found`,
+      );
     }
 
     return garage;
   }
 
-  // 4. Update an existing garage record
-  async update(id: string, dto: UpdateGarageDto) {
-    await this.findOne(id); // Ensures record exists before updating
+  async update(
+    id: string,
+    dto: UpdateGarageDto,
+    userId: string,
+  ) {
+    await this.findOne(id);
 
-    return this.prisma.garage.update({
+    const garage = await this.prisma.garage.update({
       where: { id },
       data: dto,
     });
+
+    await this.auditService.log(
+      'UPDATE',
+      'Garage',
+      garage.id,
+      userId,
+    );
+
+    return garage;
   }
 
-  // 5. Delete a garage record
-  async remove(id: string) {
-    await this.findOne(id); // Ensures record exists before deleting
+  async remove(id: string, userId: string) {
+    await this.findOne(id);
+
+    await this.auditService.log(
+      'DELETE',
+      'Garage',
+      id,
+      userId,
+    );
 
     return this.prisma.garage.delete({
       where: { id },

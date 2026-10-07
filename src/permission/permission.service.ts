@@ -1,16 +1,37 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+} from '@nestjs/common';
+
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 
 @Injectable()
 export class PermissionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
-  create(createPermissionDto: CreatePermissionDto) {
-    return this.prisma.permission.create({
-      data: createPermissionDto,
-    });
+  async create(
+    createPermissionDto: CreatePermissionDto,
+    userId: string,
+  ) {
+    const permission =
+      await this.prisma.permission.create({
+        data: createPermissionDto,
+      });
+
+    await this.auditService.log(
+      'CREATE',
+      'Permission',
+      permission.id,
+      userId,
+    );
+
+    return permission;
   }
 
   findAll() {
@@ -37,16 +58,45 @@ export class PermissionService {
       },
     });
   }
-  update(id: string, updatePermissionDto: UpdatePermissionDto) {
-  return this.prisma.permission.update({
-    where: { id },
-    data: updatePermissionDto,
-  });
-}
 
-    remove(id: string) {
-  return this.prisma.permission.delete({
-    where: { id },
-  });
-}
+  async update(
+    id: string,
+    updatePermissionDto: UpdatePermissionDto,
+    userId: string,
+  ) {
+    const permission =
+      await this.prisma.permission.update({
+        where: { id },
+        data: updatePermissionDto,
+      });
+
+    await this.auditService.log(
+      'UPDATE',
+      'Permission',
+      permission.id,
+      userId,
+    );
+
+    return permission;
+  }
+
+  async remove(
+    id: string,
+    userId: string,
+  ) {
+    await this.prisma.permission.findUniqueOrThrow({
+      where: { id },
+    });
+
+    await this.auditService.log(
+      'DELETE',
+      'Permission',
+      id,
+      userId,
+    );
+
+    return this.prisma.permission.delete({
+      where: { id },
+    });
+  }
 }

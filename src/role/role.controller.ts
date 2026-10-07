@@ -6,10 +6,12 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 
 import { RoleService } from './role.service';
+
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { AssignPermissionDto } from './dto/assign-permission.dto';
@@ -21,12 +23,20 @@ import { CheckAbility } from '../casl/ability/ability.decorator';
 @Controller('role')
 @UseGuards(JwtAuthGuard, AbilityGuard)
 export class RoleController {
-  constructor(private readonly roleService: RoleService) {}
+  constructor(
+    private readonly roleService: RoleService,
+  ) {}
 
   @CheckAbility('manage', 'Role')
   @Post()
-  create(@Body() createRoleDto: CreateRoleDto) {
-    return this.roleService.create(createRoleDto);
+  create(
+    @Body() createRoleDto: CreateRoleDto,
+    @Req() req: any,
+  ) {
+    return this.roleService.create(
+      createRoleDto,
+      req.user.id,
+    );
   }
 
   @CheckAbility('manage', 'Role')
@@ -46,14 +56,25 @@ export class RoleController {
   update(
     @Param('id') id: string,
     @Body() updateRoleDto: UpdateRoleDto,
+    @Req() req: any,
   ) {
-    return this.roleService.update(id, updateRoleDto);
+    return this.roleService.update(
+      id,
+      updateRoleDto,
+      req.user.id,
+    );
   }
 
   @CheckAbility('manage', 'Role')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.roleService.remove(id);
+  remove(
+    @Param('id') id: string,
+    @Req() req: any,
+  ) {
+    return this.roleService.remove(
+      id,
+      req.user.id,
+    );
   }
 
   @CheckAbility('manage', 'Role')
@@ -61,10 +82,12 @@ export class RoleController {
   assignPermission(
     @Param('id') id: string,
     @Body() assignPermissionDto: AssignPermissionDto,
+    @Req() req: any,
   ) {
     return this.roleService.assignPermission(
       id,
       assignPermissionDto.permissionId,
+      req.user.id,
     );
   }
 }

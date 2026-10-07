@@ -1,5 +1,13 @@
-import { Injectable, NotFoundException,   ConflictException } from '@nestjs/common';
+
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
+
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+
 import {
   CreateContractDto,
   UpdateContractDto,
@@ -7,141 +15,283 @@ import {
 
 @Injectable()
 export class ContractService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+  private readonly prisma: PrismaService,
+  private readonly auditService: AuditService,
+) {}
 
-async create(dto: CreateContractDto) {
-  const startDate = new Date(dto.startDate);
-  const endDate = dto.endDate ? new Date(dto.endDate) : null;
+    async create(dto: CreateContractDto, userId: string) {
+      const startDate = new Date(dto.startDate);
+    const endDate = dto.endDate
+      ? new Date(dto.endDate)
+      : null;
 
-  const now = new Date();
+    const now = new Date();
 
-  const isActive =
-    startDate <= now && (endDate === null || endDate >= now);
+    const isActive =
+      startDate <= now &&
+      (endDate === null || endDate >= now);
 
-  if (isActive) {
-    const existingActiveContract =
-      await this.prisma.contract.findFirst({
-        where: {
-          enterpriseId: dto.enterpriseId,
-          startDate: {
-            lte: now,
-          },
-          OR: [
-            {
-              endDate: null,
+    if (isActive) {
+      const existingActiveContract =
+        await this.prisma.contract.findFirst({
+          where: {
+            enterpriseId: dto.enterpriseId,
+
+            startDate: {
+              lte: now,
             },
-            {
-              endDate: {
-                gte: now,
+
+            OR: [
+              {
+                endDate: null,
               },
-            },
-          ],
-        },
-      });
+              {
+                endDate: {
+                  gte: now,
+                },
+              },
+            ],
+          },
+        });
 
-    if (existingActiveContract) {
-      throw new ConflictException(
-        'This enterprise already has an active contract',
-      );
+      if (existingActiveContract) {
+        throw new ConflictException(
+          'This enterprise already has an active contract',
+        );
+      }
     }
+
+const contract = await this.prisma.contract.create({
+  data: {
+    garageId: dto.garageId,
+    enterpriseId: dto.enterpriseId,
+    startDate,
+    endDate,
+    terms: dto.terms,
+    discountPercent: dto.discountPercent ?? 0,
+
+    createdById: userId,
+    updatedById: userId,
+  },
+});
+
+await this.auditService.log(
+  'CREATE',
+  'Contract',
+  contract.id,
+  userId,
+);
+
+return contract;
   }
 
-  return this.prisma.contract.create({
-    data: {
-      garageId: dto.garageId,
-      enterpriseId: dto.enterpriseId,
-      startDate,
-      endDate,
-      terms: dto.terms,
-      discountPercent: dto.discountPercent ?? 0,
-    },
-  });
-}
+  async findAll(
+    page = 1,
+    limit = 10,
+    sortBy = 'startDate',
+    sortOrder: 'asc' | 'desc' = 'desc',
+  ) {
+    page = Math.max(1, page);
+    limit = Math.min(Math.max(1, limit), 100);
 
-  async findAll() {
-    return this.prisma.contract.findMany({
-      include: {
-        garage: true,
-        enterprise: true,
+    const skip = (page - 1) * limit;
+
+    const allowedSortFields = [
+      'startDate',
+      'endDate',
+      'discountPercent',
+      'createdAt',
+    ];
+
+    const safeSortBy = allowedSortFields.includes(sortBy)
+      ? sortBy
+      : 'startDate';
+
+    const [contracts, total] =
+      await this.prisma.$transaction([
+        this.prisma.contract.findMany({
+          include: {
+            garage: true,
+            enterprise: true,
+          },
+
+          orderBy: {
+            [safeSortBy]: sortOrder,
+          },
+
+          skip,
+          take: limit,
+        }),
+
+        this.prisma.contract.count(),
+      ]);
+
+    return {
+      data: contracts,
+
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
-      orderBy: {
-        startDate: 'desc',
-      },
-    });
+    };
   }
 
-  async findExpiring(days: number = 30) {
-  const now = new Date();
+  async findExpiring(
+    page = 1,
+    limit = 10,
+    sortBy = 'endDate',
+    sortOrder: 'asc' | 'desc' = 'asc',
+  ) {
+    page = Math.max(1, page);
+    limit = Math.min(Math.max(1, limit), 100);
 
-  const expiryDate = new Date();
-  expiryDate.setDate(expiryDate.getDate() + days);
+    const now = new Date();
 
-  return this.prisma.contract.findMany({
-    where: {
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
+
+    const skip = (page - 1) * limit;
+
+    const allowedSortFields = [
+      'endDate',
+      'startDate',
+      'discountPercent',
+      'createdAt',
+    ];
+
+    const safeSortBy = allowedSortFields.includes(sortBy)
+      ? sortBy
+      : 'endDate';
+
+    const where = {
       endDate: {
         gte: now,
         lte: expiryDate,
       },
-    },
-    include: {
-      garage: true,
-      enterprise: true,
-    },
-    orderBy: {
-      endDate: 'asc',
-    },
-  });
-}
+    };
+
+    const [contracts, total] =
+      await this.prisma.$transaction([
+        this.prisma.contract.findMany({
+          where,
+
+          include: {
+            garage: true,
+            enterprise: true,
+          },
+
+          orderBy: {
+            [safeSortBy]: sortOrder,
+          },
+
+          skip,
+          take: limit,
+        }),
+
+        this.prisma.contract.count({
+          where,
+        }),
+      ]);
+
+    return {
+      data: contracts,
+
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 
   async findOne(id: string) {
-    const contract = await this.prisma.contract.findUnique({
-      where: { id },
-      include: {
-        garage: true,
-        enterprise: true,
-      },
-    });
+    const contract =
+      await this.prisma.contract.findUnique({
+        where: { id },
+
+        include: {
+          garage: true,
+          enterprise: true,
+        },
+      });
 
     if (!contract) {
-      throw new NotFoundException(`Contract with ID ${id} not found`);
+      throw new NotFoundException(
+        `Contract with ID ${id} not found`,
+      );
     }
 
     return contract;
   }
 
-  async update(id: string, dto: UpdateContractDto) {
+  async update(
+    id: string,
+    dto: UpdateContractDto,
+    userId: string,
+
+  ) {
     await this.findOne(id);
 
-    return this.prisma.contract.update({
-      where: { id },
-      data: {
-        ...(dto.garageId !== undefined && {
-          garageId: dto.garageId,
-        }),
-        ...(dto.enterpriseId !== undefined && {
-          enterpriseId: dto.enterpriseId,
-        }),
-        ...(dto.startDate !== undefined && {
-          startDate: new Date(dto.startDate),
-        }),
-        ...(dto.endDate !== undefined && {
-          endDate: dto.endDate ? new Date(dto.endDate) : null,
-        }),
-        ...(dto.terms !== undefined && {
-          terms: dto.terms,
-        }),
-        ...(dto.discountPercent !== undefined && {
-          discountPercent: dto.discountPercent,
-        }),
-      },
-    });
-  }
+    const contract = await this.prisma.contract.update({
+  where: { id },
 
-  async remove(id: string) {
-    await this.findOne(id);
+  data: {
+    ...(dto.garageId !== undefined && {
+      garageId: dto.garageId,
+    }),
 
-    return this.prisma.contract.delete({
-      where: { id },
-    });
+    ...(dto.enterpriseId !== undefined && {
+      enterpriseId: dto.enterpriseId,
+    }),
+
+    ...(dto.startDate !== undefined && {
+      startDate: new Date(dto.startDate),
+    }),
+
+    ...(dto.endDate !== undefined && {
+      endDate: dto.endDate
+        ? new Date(dto.endDate)
+        : null,
+    }),
+
+    ...(dto.terms !== undefined && {
+      terms: dto.terms,
+    }),
+
+    ...(dto.discountPercent !== undefined && {
+      discountPercent: dto.discountPercent,
+    }),
+
+    updatedById: userId,
+  },
+});
+
+await this.auditService.log(
+  'UPDATE',
+  'Contract',
+  contract.id,
+  userId,
+);
+
+return contract;
   }
+async remove(id: string, userId: string) {
+  const contract = await this.findOne(id);
+
+  await this.auditService.log(
+    'DELETE',
+    'Contract',
+    contract.id,
+    userId,
+  );
+
+  return this.prisma.contract.delete({
+    where: { id },
+  });
 }
+}
+

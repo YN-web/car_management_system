@@ -1,16 +1,38 @@
-import { Injectable,  ForbiddenException} from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+} from '@nestjs/common';
+
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 
 @Injectable()
 export class RoleService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
-  create(createRoleDto: CreateRoleDto) {
-    return this.prisma.role.create({
-      data: createRoleDto,
-    });
+  async create(
+    createRoleDto: CreateRoleDto,
+    userId: string,
+  ) {
+    const role =
+      await this.prisma.role.create({
+        data: createRoleDto,
+      });
+
+    await this.auditService.log(
+      'CREATE',
+      'Role',
+      role.id,
+      userId,
+    );
+
+    return role;
   }
 
   findAll() {
@@ -61,68 +83,109 @@ export class RoleService {
       },
     });
   }
-  //update
- async update(id: string, updateRoleDto: UpdateRoleDto) {
-  const role = await this.prisma.role.findUnique({
-    where: { id },
-  });
 
-  if (!role) {
-    throw new Error('Role not found');
-  }
+  async update(
+    id: string,
+    updateRoleDto: UpdateRoleDto,
+    userId: string,
+  ) {
+    const role =
+      await this.prisma.role.findUnique({
+        where: { id },
+      });
 
-  if (role.isSuperAdmin) {
-    throw new ForbiddenException(
-      'Super_Admin role cannot be modified',
+    if (!role) {
+      throw new Error('Role not found');
+    }
+
+    if (role.isSuperAdmin) {
+      throw new ForbiddenException(
+        'Super_Admin role cannot be modified',
+      );
+    }
+
+    const updated =
+      await this.prisma.role.update({
+        where: { id },
+        data: updateRoleDto,
+      });
+
+    await this.auditService.log(
+      'UPDATE',
+      'Role',
+      updated.id,
+      userId,
     );
+
+    return updated;
   }
 
-  return this.prisma.role.update({
-    where: { id },
-    data: updateRoleDto,
-  });
-}
-  //delete
-async remove(id: string) {
-  const role = await this.prisma.role.findUnique({
-    where: { id },
-  });
+  async remove(
+    id: string,
+    userId: string,
+  ) {
+    const role =
+      await this.prisma.role.findUnique({
+        where: { id },
+      });
 
-  if (!role) {
-    throw new Error('Role not found');
-  }
+    if (!role) {
+      throw new Error('Role not found');
+    }
 
-  if (role.isSuperAdmin) {
-    throw new ForbiddenException(
-      'Super_Admin role cannot be deleted',
+    if (role.isSuperAdmin) {
+      throw new ForbiddenException(
+        'Super_Admin role cannot be deleted',
+      );
+    }
+
+    await this.auditService.log(
+      'DELETE',
+      'Role',
+      role.id,
+      userId,
     );
+
+    return this.prisma.role.delete({
+      where: { id },
+    });
   }
 
-  return this.prisma.role.delete({
-    where: { id },
-  });
-}
+  async assignPermission(
+    id: string,
+    permissionId: string,
+    userId: string,
+  ) {
+    const role =
+      await this.prisma.role.findUnique({
+        where: { id },
+      });
 
-  async assignPermission(id: string, permissionId: string) {
-  const role = await this.prisma.role.findUnique({
-    where: { id },
-  });
+    if (!role) {
+      throw new Error('Role not found');
+    }
 
-  if (!role) {
-    throw new Error('Role not found');
-  }
+    if (role.isSuperAdmin) {
+      throw new ForbiddenException(
+        'Permissions cannot be assigned to Super_Admin',
+      );
+    }
 
-  if (role.isSuperAdmin) {
-    throw new ForbiddenException(
-      'Permissions cannot be assigned to Super_Admin',
+    const rolePermission =
+      await this.prisma.rolePermission.create({
+        data: {
+          roleId: id,
+          permissionId: permissionId,
+        },
+      });
+
+    await this.auditService.log(
+      'ASSIGN_PERMISSION',
+      'Role',
+      role.id,
+      userId,
     );
-  }
 
-  return this.prisma.rolePermission.create({
-    data: {
-      roleId: id,
-      permissionId: permissionId,
-    },
-  });
-}
+    return rolePermission;
+  }
 }

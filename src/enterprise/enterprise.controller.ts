@@ -1,34 +1,88 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+
 import { EnterpriseService } from './enterprise.service';
+
 import { CreateEnterpriseDto } from './dto/create-enterprise.dto';
 import { UpdateEnterpriseDto } from './dto/update-enterprise.dto';
 
+import { JwtAuthGuard } from '../auth/jwt/jwt.guard';
+import { AbilityGuard } from '../casl/ability/ability.guard';
+import { CheckAbility } from '../casl/ability/ability.decorator';
+
 @Controller('enterprise')
+@UseGuards(JwtAuthGuard, AbilityGuard)
 export class EnterpriseController {
-  constructor(private readonly enterpriseService: EnterpriseService) {}
+  constructor(
+    private readonly enterpriseService: EnterpriseService,
+  ) {}
 
+  @CheckAbility('create', 'Enterprise')
   @Post()
-create(@Body() createEnterpriseDto: CreateEnterpriseDto) {
-  return this.enterpriseService.create(createEnterpriseDto);
-}
+  create(
+    @Body() createEnterpriseDto: CreateEnterpriseDto,
+    @Req() req: any,
+  ) {
+    return this.enterpriseService.create(
+      createEnterpriseDto,
+      req.user.id,
+    );
+  }
 
-@Get()
-findAll() {
-  return this.enterpriseService.findAll();
-}
+  @CheckAbility('read', 'Enterprise')
+  @Get()
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+  ) {
+    return this.enterpriseService.findAll(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 10,
+      sortBy || 'createdAt',
+      sortOrder || 'desc',
+    );
+  }
 
-@Get(':id')
-findOne(@Param('id') id: string) {
-  return this.enterpriseService.findOne(id);
-}
+  @CheckAbility('read', 'Enterprise')
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.enterpriseService.findOne(id);
+  }
 
-@Patch(':id')
-update(@Param('id') id: string, @Body() updateEnterpriseDto: UpdateEnterpriseDto) {
-  return this.enterpriseService.update(id, updateEnterpriseDto);
-}
+  @CheckAbility('update', 'Enterprise')
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() updateEnterpriseDto: UpdateEnterpriseDto,
+    @Req() req: any,
+  ) {
+    return this.enterpriseService.update(
+      id,
+      updateEnterpriseDto,
+      req.user.id,
+    );
+  }
 
-@Patch(':id/deactivate')
-deactivate(@Param('id') id: string) {
-  return this.enterpriseService.deactivate(id);
-}
+  @CheckAbility('update', 'Enterprise')
+  @Patch(':id/deactivate')
+  deactivate(
+    @Param('id') id: string,
+    @Req() req: any,
+  ) {
+    return this.enterpriseService.deactivate(
+      id,
+      req.user.id,
+    );
+  }
 }

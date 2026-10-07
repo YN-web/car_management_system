@@ -6,10 +6,13 @@ import {
   Param,
   Patch,
   Post,
+  Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 
 import { ContractService } from './contract.service';
+
 import {
   CreateContractDto,
   UpdateContractDto,
@@ -22,24 +25,53 @@ import { CheckAbility } from '../casl/ability/ability.decorator';
 @Controller('contract')
 @UseGuards(JwtAuthGuard, AbilityGuard)
 export class ContractController {
-  constructor(private readonly contractService: ContractService) {}
+  constructor(
+    private readonly contractService: ContractService,
+  ) {}
 
   @CheckAbility('create', 'Contract')
   @Post()
-  create(@Body() dto: CreateContractDto) {
-    return this.contractService.create(dto);
-  }
+  
+  create(
+  @Body() dto: CreateContractDto,
+  @Req() req: any,
+) {
+  return this.contractService.create(
+    dto,
+    req.user.id,
+  );
+}
 
   @CheckAbility('read', 'Contract')
   @Get()
-  findAll() {
-    return this.contractService.findAll();
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+  ) {
+    return this.contractService.findAll(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 10,
+      sortBy || 'startDate',
+      sortOrder || 'desc',
+    );
   }
 
   @CheckAbility('read', 'Contract')
   @Get('expiring')
-  findExpiring() {
-  return this.contractService.findExpiring();
+  findExpiring(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+  ) {
+    return this.contractService.findExpiring(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 10,
+      sortBy || 'endDate',
+      sortOrder || 'asc',
+    );
   }
 
   @CheckAbility('read', 'Contract')
@@ -50,16 +82,28 @@ export class ContractController {
 
   @CheckAbility('update', 'Contract')
   @Patch(':id')
+  
   update(
-    @Param('id') id: string,
-    @Body() dto: UpdateContractDto,
-  ) {
-    return this.contractService.update(id, dto);
-  }
+  @Param('id') id: string,
+  @Body() dto: UpdateContractDto,
+  @Req() req: any,
+) {
+  return this.contractService.update(
+    id,
+    dto,
+    req.user.id,
+  );
+}
 
   @CheckAbility('delete', 'Contract')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.contractService.remove(id);
-  }
+  remove(
+  @Param('id') id: string,
+  @Req() req: any,
+) {
+  return this.contractService.remove(
+    id,
+    req.user.id,
+  );
+}
 }
