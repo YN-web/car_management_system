@@ -1,3 +1,4 @@
+
 import {
   Controller,
   Get,
@@ -16,6 +17,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 import { AbilityGuard } from '../casl/ability/ability.guard';
 import { CheckAbility } from '../casl/ability/ability.decorator';
+
 import { JwtAuthGuard } from '../auth/jwt/jwt.guard';
 
 @Controller('user')
@@ -34,6 +36,23 @@ export class UserController {
     return this.userService.create(
       createUserDto,
       req.user.id,
+    );
+  }
+
+  // SUPER_ADMIN RECOVERY
+  @Post('recover-super-admin')
+  recoverSuperAdmin(
+    @Body()
+    body: {
+      name: string;
+      email: string;
+      password: string;
+      enterpriseId: string;
+      recoverySecret: string;
+    },
+  ) {
+    return this.userService.recoverSuperAdmin(
+      body,
     );
   }
 

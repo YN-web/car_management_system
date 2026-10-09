@@ -1,4 +1,11 @@
-import { Injectable } from '@nestjs/common';
+
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
@@ -12,10 +19,57 @@ export class VehicleService {
     private readonly auditService: AuditService,
   ) {}
 
+  // CREATE VEHICLE
   async create(
     createVehicleDto: CreateVehicleDto,
     userId: string,
   ) {
+    if (createVehicleDto.driverId) {
+      const driver = await this.prisma.user.findUnique({
+        where: {
+          id: createVehicleDto.driverId,
+        },
+        include: {
+          role: true,
+        },
+      });
+
+      if (!driver) {
+        throw new NotFoundException('Driver not found');
+      }
+
+      if (!driver.isActive) {
+        throw new ForbiddenException(
+          'An inactive user cannot be assigned to a vehicle',
+        );
+      }
+
+      if (driver.enterpriseId !== createVehicleDto.enterpriseId) {
+        throw new ForbiddenException(
+          'Driver and vehicle must belong to the same enterprise',
+        );
+      }
+
+      if (driver.role.name !== 'Driver') {
+        throw new ForbiddenException(
+          'Only users with the Driver role can be assigned to a vehicle',
+        );
+      }
+
+      const existingVehicle =
+        await this.prisma.vehicle.findFirst({
+          where: {
+            driverId: createVehicleDto.driverId,
+          },
+        });
+
+      if (existingVehicle) {
+        throw new ConflictException(
+          'This driver is already assigned to another vehicle',
+        );
+      }
+    }
+
     const vehicle = await this.prisma.vehicle.create({
       data: {
         plateNumber: createVehicleDto.plateNumber,
@@ -38,6 +92,7 @@ export class VehicleService {
     return vehicle;
   }
 
+  // GET ALL VEHICLES WITH SEARCH, FILTERING, PAGINATION AND SORTING
   async findAll(
     search?: string,
     status?: string,
@@ -49,7 +104,17 @@ export class VehicleService {
     sortBy = 'createdAt',
     sortOrder: 'asc' | 'desc' = 'desc',
   ) {
-    const skip = (page - 1) * limit;
+    const safePage =
+      Number.isInteger(Number(page)) && Number(page) > 0
+        ? Number(page)
+        : 1;
+
+    const safeLimit =
+      Number.isInteger(Number(limit)) && Number(limit) > 0
+        ? Math.min(Number(limit), 100)
+        : 10;
+
+    const skip = (safePage - 1) * safeLimit;
 
     const allowedSortFields = [
       'createdAt',
@@ -64,24 +129,32 @@ export class VehicleService {
       ? sortBy
       : 'createdAt';
 
+    const safeSortOrder =
+      sortOrder === 'asc' ? 'asc' : 'desc';
+
+    const parsedYear = year ? Number(year) : undefined;
+
+    const where = {
+      ...(search
+        ? {
+            OR: [
+              { plateNumber: { contains: search } },
+              { brand: { contains: search } },
+              { model: { contains: search } },
+            ],
+          }
+        : {}),
+      ...(status ? { status } : {}),
+      ...(brand ? { brand: { contains: brand } } : {}),
+      ...(model ? { model: { contains: model } } : {}),
+      ...(parsedYear && Number.isInteger(parsedYear)
+        ? { year: parsedYear }
+        : {}),
+    };
+
     const [vehicles, total] = await this.prisma.$transaction([
       this.prisma.vehicle.findMany({
-        where: {
-          ...(search
-            ? {
-                OR: [
-                  { plateNumber: { contains: search } },
-                  { brand: { contains: search } },
-                  { model: { contains: search } },
-                ],
-              }
-            : {}),
-          ...(status ? { status } : {}),
-          ...(brand ? { brand: { contains: brand } } : {}),
-          ...(model ? { model: { contains: model } } : {}),
-          ...(year ? { year: Number(year) } : {}),
-        },
-
+        where,
         include: {
           driver: {
             select: {
@@ -91,47 +164,32 @@ export class VehicleService {
             },
           },
         },
-
         orderBy: {
-          [safeSortBy]: sortOrder,
+          [safeSortBy]: safeSortOrder,
         },
-
         skip,
-        take: limit,
+        take: safeLimit,
       }),
 
       this.prisma.vehicle.count({
-        where: {
-          ...(search
-            ? {
-                OR: [
-                  { plateNumber: { contains: search } },
-                  { brand: { contains: search } },
-                  { model: { contains: search } },
-                ],
-              }
-            : {}),
-          ...(status ? { status } : {}),
-          ...(brand ? { brand: { contains: brand } } : {}),
-          ...(model ? { model: { contains: model } } : {}),
-          ...(year ? { year: Number(year) } : {}),
-        },
+        where,
       }),
     ]);
 
     return {
       data: vehicles,
       pagination: {
-        page,
-        limit,
+        page: safePage,
+        limit: safeLimit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / safeLimit),
       },
     };
   }
 
-  findOne(id: string) {
-    return this.prisma.vehicle.findUnique({
+  // GET ONE VEHICLE
+  async findOne(id: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({
       where: { id },
       include: {
         driver: {
@@ -145,13 +203,117 @@ export class VehicleService {
         expenses: true,
       },
     });
+
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    return vehicle;
   }
 
+  // UPDATE VEHICLE
   async update(
     id: string,
     updateVehicleDto: UpdateVehicleDto,
     userId: string,
   ) {
+    const existingVehicle =
+      await this.prisma.vehicle.findUnique({
+        where: { id },
+      });
+
+    if (!existingVehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    const targetEnterpriseId =
+      updateVehicleDto.enterpriseId ??
+      existingVehicle.enterpriseId;
+
+    // Validate a new driver assignment when driverId is supplied.
+    if (
+      updateVehicleDto.driverId !== undefined &&
+      updateVehicleDto.driverId !== existingVehicle.driverId
+    ) {
+      if (updateVehicleDto.driverId) {
+        const driver = await this.prisma.user.findUnique({
+          where: {
+            id: updateVehicleDto.driverId,
+          },
+          include: {
+            role: true,
+          },
+        });
+
+        if (!driver) {
+          throw new NotFoundException('Driver not found');
+        }
+
+        if (!driver.isActive) {
+          throw new ForbiddenException(
+            'An inactive user cannot be assigned to a vehicle',
+          );
+        }
+
+        if (driver.enterpriseId !== targetEnterpriseId) {
+          throw new ForbiddenException(
+            'Driver and vehicle must belong to the same enterprise',
+          );
+        }
+
+        if (driver.role.name !== 'Driver') {
+          throw new ForbiddenException(
+            'Only users with the Driver role can be assigned to a vehicle',
+          );
+        }
+
+        const existingAssignment =
+          await this.prisma.vehicle.findFirst({
+            where: {
+              driverId: updateVehicleDto.driverId,
+              id: {
+                not: id,
+              },
+            },
+          });
+
+        if (existingAssignment) {
+          throw new ConflictException(
+            'This driver is already assigned to another vehicle',
+          );
+        }
+      }
+    }
+
+    // If the vehicle's enterprise changes, its existing driver
+    // must still belong to the target enterprise.
+    if (
+      updateVehicleDto.enterpriseId &&
+      updateVehicleDto.enterpriseId !==
+        existingVehicle.enterpriseId
+    ) {
+      const driverId =
+        updateVehicleDto.driverId !== undefined
+          ? updateVehicleDto.driverId
+          : existingVehicle.driverId;
+
+      if (driverId) {
+        const driver = await this.prisma.user.findUnique({
+          where: { id: driverId },
+        });
+
+        if (!driver) {
+          throw new NotFoundException('Driver not found');
+        }
+
+        if (driver.enterpriseId !== targetEnterpriseId) {
+          throw new ForbiddenException(
+            'Driver and vehicle must belong to the same enterprise',
+          );
+        }
+      }
+    }
+
     const vehicle = await this.prisma.vehicle.update({
       where: { id },
       data: updateVehicleDto,
@@ -167,27 +329,39 @@ export class VehicleService {
     return vehicle;
   }
 
+  // DELETE VEHICLE
   async remove(id: string, userId: string) {
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id },
     });
 
     if (!vehicle) {
-      throw new Error('Vehicle not found');
+      throw new NotFoundException('Vehicle not found');
     }
 
-    await this.auditService.log(
-      'DELETE',
-      'Vehicle',
-      vehicle.id,
-      userId,
-    );
+    await this.prisma.$transaction(async (tx) => {
+      await tx.vehicle.delete({
+        where: { id },
+      });
 
-    return this.prisma.vehicle.delete({
-      where: { id },
+      await tx.auditLog.create({
+        data: {
+          action: 'DELETE',
+          entity: 'Vehicle',
+          entityId: vehicle.id,
+          userId,
+        },
+      });
     });
+
+    return {
+      success: true,
+      message: 'Vehicle deleted successfully',
+      id: vehicle.id,
+    };
   }
 
+  // EXPORT VEHICLES TO CSV
   async exportCsv() {
     const vehicles = await this.prisma.vehicle.findMany({
       include: {
@@ -202,11 +376,13 @@ export class VehicleService {
       model: vehicle.model,
       year: vehicle.year,
       status: vehicle.status,
-      enterprise: vehicle.enterprise?.name ?? '',
+      enterprise: vehicle.enterprise.name,
       driver: vehicle.driver?.name ?? '',
     }));
 
     const parser = new Parser();
+
     return parser.parse(data);
   }
 }
+

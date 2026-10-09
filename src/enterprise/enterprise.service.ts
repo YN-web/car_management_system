@@ -159,4 +159,21 @@ export class EnterpriseService {
 
     return updated;
   }
+
+
+async findOptions() {
+  return this.prisma.enterprise.findMany({
+    where: {
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+    orderBy: {
+      name: 'asc',
+    },
+  });
+}
+
 }

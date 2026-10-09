@@ -54,6 +54,14 @@ export class EnterpriseController {
     );
   }
 
+
+  @Get('options')
+  @CheckAbility('read', 'Enterprise')
+  findOptions() {
+    return this.enterpriseService.findOptions();
+  }
+
+
   @CheckAbility('read', 'Enterprise')
   @Get(':id')
   findOne(@Param('id') id: string) {
