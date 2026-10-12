@@ -9,7 +9,14 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 
 import { ContractService } from './contract.service';
 
@@ -29,19 +36,103 @@ export class ContractController {
     private readonly contractService: ContractService,
   ) {}
 
+  // Create a contract
   @CheckAbility('create', 'Contract')
   @Post()
-  
   create(
-  @Body() dto: CreateContractDto,
-  @Req() req: any,
-) {
-  return this.contractService.create(
-    dto,
-    req.user.id,
-  );
-}
+    @Body() dto: CreateContractDto,
+    @Req() req: any,
+  ) {
+    return this.contractService.create(
+      dto,
+      req.user.id,
+    );
+  }
 
+  // Upload Terms and Conditions PDF
+  @CheckAbility('update', 'Contract')
+  @Post(':id/terms-file')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/contracts',
+        filename: (req, file, callback) => {
+          const uniqueName =
+            `${Date.now()}-${Math.round(Math.random() * 1e9)}` +
+            extname(file.originalname).toLowerCase();
+
+          callback(null, uniqueName);
+        },
+      }),
+      limits: {
+        fileSize: 5 * 1024 * 1024,
+      },
+      fileFilter: (req, file, callback) => {
+        if (
+          file.mimetype !== 'application/pdf' ||
+          extname(file.originalname).toLowerCase() !== '.pdf'
+        ) {
+          return callback(
+            new BadRequestException(
+              'Only PDF files are allowed.',
+            ),
+            false,
+          );
+        }
+
+        callback(null, true);
+      },
+    }),
+  )
+  @CheckAbility('update', 'Contract')
+  @Post(':id/terms-file')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/contracts',
+        filename: (req, file, callback) => {
+          const uniqueName =
+            `${Date.now()}-${Math.round(Math.random() * 1e9)}` +
+            extname(file.originalname).toLowerCase();
+
+          callback(null, uniqueName);
+        },
+      }),
+      limits: {
+        fileSize: 5 * 1024 * 1024,
+      },
+      fileFilter: (req, file, callback) => {
+        if (
+          file.mimetype !== 'application/pdf' ||
+          extname(file.originalname).toLowerCase() !== '.pdf'
+        ) {
+          return callback(
+            new BadRequestException('Only PDF files are allowed.'),
+            false,
+          );
+        }
+
+        callback(null, true);
+      },
+    }),
+  )
+  uploadTermsFile(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Please upload a PDF file.');
+    }
+
+    return this.contractService.updateTermsFile(
+      id,
+      `uploads/contracts/${file.filename}`,
+      req.user.id,
+    );
+  }
+
+  // Get all contracts
   @CheckAbility('read', 'Contract')
   @Get()
   findAll(
@@ -58,6 +149,7 @@ export class ContractController {
     );
   }
 
+  // Get expiring contracts
   @CheckAbility('read', 'Contract')
   @Get('expiring')
   findExpiring(
@@ -74,36 +166,38 @@ export class ContractController {
     );
   }
 
+  // Get one contract
   @CheckAbility('read', 'Contract')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.contractService.findOne(id);
   }
 
+  // Update a contract
   @CheckAbility('update', 'Contract')
   @Patch(':id')
-  
   update(
-  @Param('id') id: string,
-  @Body() dto: UpdateContractDto,
-  @Req() req: any,
-) {
-  return this.contractService.update(
-    id,
-    dto,
-    req.user.id,
-  );
-}
+    @Param('id') id: string,
+    @Body() dto: UpdateContractDto,
+    @Req() req: any,
+  ) {
+    return this.contractService.update(
+      id,
+      dto,
+      req.user.id,
+    );
+  }
 
+  // Delete a contract
   @CheckAbility('delete', 'Contract')
   @Delete(':id')
   remove(
-  @Param('id') id: string,
-  @Req() req: any,
-) {
-  return this.contractService.remove(
-    id,
-    req.user.id,
-  );
-}
+    @Param('id') id: string,
+    @Req() req: any,
+  ) {
+    return this.contractService.remove(
+      id,
+      req.user.id,
+    );
+  }
 }
