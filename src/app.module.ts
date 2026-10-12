@@ -20,6 +20,8 @@ import { BillingModule } from './billing/billing.module';
 import { ExpenseModule } from './expense/expense.module';
 import { ReportModule } from './report/report.module';
 import { AuditModule } from './audit/audit.module';
+import { ExpenseCategoryModule } from './expense-category/expense-category.module';
+
 
 
 @Module({
@@ -47,6 +49,7 @@ import { AuditModule } from './audit/audit.module';
   ExpenseModule,
   ReportModule,
   AuditModule,
+  ExpenseCategoryModule,
 ],
 
 

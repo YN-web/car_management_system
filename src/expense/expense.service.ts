@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,6 +20,7 @@ export class ExpenseService {
     dto: CreateExpenseDto,
     userId: string,
   ) {
+    // Check that the vehicle exists
     const vehicle =
       await this.prisma.vehicle.findUnique({
         where: {
@@ -32,10 +34,40 @@ export class ExpenseService {
       );
     }
 
+    // Determine the category to use
+    let categoryId = dto.categoryId;
+
+    if (!categoryId && dto.categoryName?.trim()) {
+      const otherCategory =
+        await this.prisma.expenseCategory.findUnique({
+          where: {
+            name: 'Other',
+          },
+          select: {
+            id: true,
+          },
+        });
+
+      if (!otherCategory) {
+        throw new NotFoundException(
+          'The Other expense category must exist.',
+        );
+      }
+
+      categoryId = otherCategory.id;
+    }
+
+    if (!categoryId) {
+      throw new BadRequestException(
+        'Select an existing category or enter a custom category name.',
+      );
+    }
+
+    // Check that the selected category exists
     const category =
       await this.prisma.expenseCategory.findUnique({
         where: {
-          id: dto.categoryId,
+          id: categoryId,
         },
       });
 
@@ -45,20 +77,25 @@ export class ExpenseService {
       );
     }
 
+    // Create the expense
     const expense =
       await this.prisma.expense.create({
         data: {
           vehicleId: dto.vehicleId,
-          categoryId: dto.categoryId,
+          categoryId: categoryId,
+          customCategory:
+            dto.categoryName?.trim() || null,
           amount: dto.amount,
           description: dto.description,
         },
         include: {
           vehicle: true,
           category: true,
+          billing: true,
         },
       });
 
+    // Record the action in the audit log
     await this.auditService.log(
       'CREATE',
       'Expense',
@@ -69,6 +106,7 @@ export class ExpenseService {
     return expense;
   }
 
+  // Get all expenses
   findAll() {
     return this.prisma.expense.findMany({
       include: {
@@ -82,6 +120,7 @@ export class ExpenseService {
     });
   }
 
+  // Get one expense
   async findOne(id: string) {
     const expense =
       await this.prisma.expense.findUnique({
@@ -104,6 +143,7 @@ export class ExpenseService {
     return expense;
   }
 
+  // Export expenses to CSV
   async exportCsv() {
     const expenses =
       await this.prisma.expense.findMany({
@@ -119,16 +159,15 @@ export class ExpenseService {
 
     const data = expenses.map((expense) => ({
       date: expense.date,
-      vehicle:
-        expense.vehicle.plateNumber,
+      vehicle: expense.vehicle.plateNumber,
       category:
+        expense.customCategory ||
         expense.category.name,
       amount: expense.amount,
       type: expense.billingId
         ? 'Automatic'
         : 'Manual',
-      description:
-        expense.description ?? '',
+      description: expense.description ?? '',
       invoiceRef:
         expense.billing?.invoiceRef ?? '',
     }));
